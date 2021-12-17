@@ -1,0 +1,11 @@
+c:\users\operator\documents\visual studio 2015\Projects\TorGenHost\TorGenHost\bin\Debug\TorGenHost.exe.config
+C:\Users\operator\Documents\Visual Studio 2015\Projects\TorGenHost\TorGenHost\bin\Debug\TorGenHost.exe
+C:\Users\operator\Documents\Visual Studio 2015\Projects\TorGenHost\TorGenHost\bin\Debug\TorGenHost.pdb
+C:\Users\operator\Documents\Visual Studio 2015\Projects\TorGenHost\TorGenHost\obj\Debug\TorGenHost.exe
+C:\Users\operator\Documents\Visual Studio 2015\Projects\TorGenHost\TorGenHost\obj\Debug\TorGenHost.pdb
+D:\WORK\program\Onion_Analyzer\tor_domain_algorythm\TorGenHost\TorGenHost\bin\Debug\TorGenHost.exe.config
+D:\WORK\program\Onion_Analyzer\tor_domain_algorythm\TorGenHost\TorGenHost\obj\Debug\TorGenHost.exe
+D:\WORK\program\Onion_Analyzer\tor_domain_algorythm\TorGenHost\TorGenHost\obj\Debug\TorGenHost.pdb
+D:\WORK\program\Onion_Analyzer\tor_domain_algorythm\TorGenHost\TorGenHost\obj\Debug\TorGenHost.csprojResolveAssemblyReference.cache
+D:\WORK\program\Onion_Analyzer\tor_domain_algorythm\TorGenHost\TorGenHost\bin\Debug\TorGenHost.exe
+D:\WORK\program\Onion_Analyzer\tor_domain_algorythm\TorGenHost\TorGenHost\bin\Debug\TorGenHost.pdb

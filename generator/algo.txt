@@ -1,0 +1,153 @@
+/** Longest recognized */
+#define MAX_DNS_LABEL_SIZE 63
+/** Characters that can appear (case-insensitively) in a base32 encoding. */
+#define BASE32_CHARS "abcdefghijklmnopqrstuvwxyz234567"
+
+/** Write <b>n</b> bytes of strong random data to <b>to</b>. Return 0 on
+ * success, -1 on failure, with support for mocking for unit tests.
+ */
+MOCK_IMPL(int, crypto_rand, (char *to, size_t n))
+{
+  return crypto_rand_unmocked(to, n);
+}
+
+/** Write <b>n</b> bytes of strong random data to <b>to</b>. Return 0 on
+ * success, -1 on failure.  Most callers will want crypto_rand instead.
+ */
+int crypto_rand_unmocked(char *to, size_t n)
+{
+  int r;
+  tor_assert(n < INT_MAX);
+  tor_assert(to);
+  r = RAND_bytes((unsigned char*)to, (int)n);
+  if (r == 0)
+    crypto_log_errors(LOG_WARN, "generating random data");
+  return (r == 1) ? 0 : -1;
+}
+
+/** Return a pseudorandom integer, chosen uniformly from the values
+ * between 0 and <b>max</b>-1 inclusive.  <b>max</b> must be between 1 and
+ * INT_MAX+1, inclusive. */
+int crypto_rand_int(unsigned int max)
+{
+  unsigned int val;
+  unsigned int cutoff;
+  tor_assert(max <= ((unsigned int)INT_MAX)+1);
+  tor_assert(max > 0); /* don't div by 0 */
+
+  /* We ignore any values that are >= 'cutoff,' to avoid biasing the
+   * distribution with clipping at the upper end of unsigned int's
+   * range.
+   */
+  cutoff = UINT_MAX - (UINT_MAX%max);
+  while (1) {
+    crypto_rand((char*)&val, sizeof(val));
+    if (val < cutoff)
+      return val % max;
+  }
+}
+
+/** Return a pseudorandom integer, chosen uniformly from the values <i>i</i>
+ * such that <b>min</b> &lt;= <i>i</i> &lt <b>max</b>.
+ *
+ * <b>min</b> MUST be in range [0, <b>max</b>).
+ * <b>max</b> MUST be in range (min, INT_MAX].
+ */
+int crypto_rand_int_range(unsigned int min, unsigned int max)
+{
+  tor_assert(min < max);
+  tor_assert(max <= INT_MAX);
+
+  /* The overflow is avoided here because crypto_rand_int() returns a value
+   * between 0 and (max - min) inclusive. */
+  return min + crypto_rand_int(max - min);
+}
+
+/** Implements base32 encoding as in RFC 4648.  Limitation: Requires
+ * that srclen*8 is a multiple of 5.
+ */
+void base32_encode(char *dest, size_t destlen, const char *src, size_t srclen)
+{
+  unsigned int i, v, u;
+  size_t nbits = srclen * 8, bit;
+
+  tor_assert(srclen < SIZE_T_CEILING/8);
+  tor_assert((nbits%5) == 0); /* We need an even multiple of 5 bits. */
+  tor_assert((nbits/5)+1 <= destlen); /* We need enough space. */
+  tor_assert(destlen < SIZE_T_CEILING);
+
+  for (i=0,bit=0; bit < nbits; ++i, bit+=5) {
+    /* set v to the 16-bit value starting at src[bits/8], 0-padded. */
+    v = ((uint8_t)src[bit/8]) << 8;
+    if (bit+5<nbits) v += (uint8_t)src[(bit/8)+1];
+    /* set u to the 5-bit value at the bit'th bit of src. */
+    u = (v >> (11-(bit%8))) & 0x1F;
+    dest[i] = BASE32_CHARS[u];
+  }
+  dest[i] = '\0';
+}
+
+/*
+ * Copy src to string dst of size siz.  At most siz-1 characters
+ * will be copied.  Always NUL terminates (unless siz == 0).
+ * Returns strlen(src); if retval >= siz, truncation occurred.
+ */
+size_t strlcpy(char *dst, const char *src, size_t siz)
+{
+	register char *d = dst;
+	register const char *s = src;
+	register size_t n = siz;
+
+	if (n == 0)
+		return(strlen(s));
+	while (*s != '\0') {
+		if (n != 1) {
+			*d++ = *s;
+			n--;
+		}
+		s++;
+	}
+	*d = '\0';
+
+	return(s - src);	/* count does not include NUL */
+}
+
+/** Generate and return a new random hostname starting with <b>prefix</b>,
+ * ending with <b>suffix</b>, and containing no fewer than
+ * <b>min_rand_len</b> and no more than <b>max_rand_len</b> random base32
+ * characters between.
+ *
+ * Clip <b>max_rand_len</b> to MAX_DNS_LABEL_SIZE.
+ **/
+char *crypto_random_hostname(int min_rand_len, int max_rand_len, const char *prefix,
+                       const char *suffix)
+{
+  char *result, *rand_bytes;
+  int randlen, rand_bytes_len;
+  size_t resultlen, prefixlen;
+
+  if (max_rand_len > MAX_DNS_LABEL_SIZE)
+    max_rand_len = MAX_DNS_LABEL_SIZE;
+  if (min_rand_len > max_rand_len)
+    min_rand_len = max_rand_len;
+
+  randlen = crypto_rand_int_range(min_rand_len, max_rand_len+1);
+
+  prefixlen = strlen(prefix);
+  resultlen = prefixlen + strlen(suffix) + randlen + 16;
+
+  rand_bytes_len = ((randlen*5)+7)/8;
+  if (rand_bytes_len % 5)
+    rand_bytes_len += 5 - (rand_bytes_len%5);
+  rand_bytes = malloc(rand_bytes_len);
+  crypto_rand(rand_bytes, rand_bytes_len);
+
+  result = malloc(resultlen);
+  memcpy(result, prefix, prefixlen);
+  base32_encode(result+prefixlen, resultlen-prefixlen,
+                rand_bytes, rand_bytes_len);
+  free(rand_bytes);
+  strlcpy(result+prefixlen+randlen, suffix, resultlen-(prefixlen+randlen));
+
+  return result;
+}

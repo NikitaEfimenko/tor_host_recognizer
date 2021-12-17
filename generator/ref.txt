@@ -1,0 +1,223 @@
+  crypto_pk_t *rsa = NULL, *rsa_auth = NULL;
+  EVP_PKEY *pkey = NULL;
+  tor_tls_context_t *result = NULL;
+  X509 *cert = NULL, *idcert = NULL, *authcert = NULL;
+  char *nickname = NULL, *nn2 = NULL;
+
+  tor_tls_init();
+  nickname = crypto_random_hostname(8, 20, "www.", ".net");
+#ifdef DISABLE_V3_LINKPROTO_SERVERSIDE
+  nn2 = crypto_random_hostname(8, 20, "www.", ".net");
+#else
+  nn2 = crypto_random_hostname(8, 20, "www.", ".com");
+#endif
+
+  /* Generate short-term RSA key for use with TLS. */
+  if (!(rsa = crypto_pk_new()))
+    goto error;
+  if (crypto_pk_generate_key(rsa)<0)
+    goto error;
+  if (!is_client) {
+    /* Generate short-term RSA key for use in the in-protocol ("v3")
+     * authentication handshake. */
+    if (!(rsa_auth = crypto_pk_new()))
+      goto error;
+    if (crypto_pk_generate_key(rsa_auth)<0)
+      goto error;
+    /* Create a link certificate signed by identity key. */
+    cert = tor_tls_create_certificate(rsa, identity, nickname, nn2,
+                                      key_lifetime);
+    /* Create self-signed certificate for identity key. */
+    idcert = tor_tls_create_certificate(identity, identity, nn2, nn2,
+                                        IDENTITY_CERT_LIFETIME);
+    /* Create an authentication certificate signed by identity key. */
+    authcert = tor_tls_create_certificate(rsa_auth, identity, nickname, nn2,
+                                          key_lifetime);
+    if (!cert || !idcert || !authcert) {
+      log_warn(LD_CRYPTO, "Error creating certificate");
+      goto error;
+    }
+  }
+
+size_t __cdecl strlen(
+    _In_z_ char const* _Str
+    );
+
+/** Generate and sign an X509 certificate with the public key <b>rsa</b>,
+ * signed by the private key <b>rsa_sign</b>.  The commonName of the
+ * certificate will be <b>cname</b>; the commonName of the issuer will be
+ * <b>cname_sign</b>. The cert will be valid for <b>cert_lifetime</b>
+ * seconds, starting from some time in the past.
+ *
+ * Return a certificate on success, NULL on failure.
+ */
+static X509 *
+tor_tls_create_certificate(crypto_pk_t *rsa,
+                           crypto_pk_t *rsa_sign,
+                           const char *cname,
+                           const char *cname_sign,
+                           unsigned int cert_lifetime)
+
+
+
+/* Don't use assertions during coverage. It leads to tons of unreached
+ * branches which in reality are only assertions we didn't hit. */
+#ifdef TOR_COVERAGE
+#define tor_assert(a) STMT_BEGIN                                        \
+  (void)(a);                                                            \
+  STMT_END
+#else
+/** Like assert(3), but send assertion failures to the log as well as to
+ * stderr. */
+#define tor_assert(expr) STMT_BEGIN                                     \
+  if (PREDICT_UNLIKELY(!(expr))) {                                      \
+    tor_assertion_failed_(SHORT_FILE__, __LINE__, __func__, #expr);     \
+    abort();                                                            \
+  } STMT_END
+#endif
+
+void tor_assertion_failed_(const char *fname, unsigned int line,
+                           const char *func, const char *expr);
+						   
+						   
+void tor_free_(void *mem);
+#ifdef USE_DMALLOC
+extern int dmalloc_free(const char *file, const int line, void *pnt,
+                        const int func_id);
+#define tor_free(p) STMT_BEGIN \
+    if (PREDICT_LIKELY((p)!=NULL)) {                \
+      dmalloc_free(SHORT_FILE__, __LINE__, (p), 0); \
+      (p)=NULL;                                     \
+    }                                               \
+  STMT_END
+#else
+/** Release memory allocated by tor_malloc, tor_realloc, tor_strdup, etc.
+ * Unlike the free() function, tor_free() will still work on NULL pointers,
+ * and it sets the pointer value to NULL after freeing it.
+ *
+ * This is a macro.  If you need a function pointer to release memory from
+ * tor_malloc(), use tor_free_().
+ */
+#define tor_free(p) STMT_BEGIN                                 \
+    if (PREDICT_LIKELY((p)!=NULL)) {                           \
+      free(p);                                                 \
+      (p)=NULL;                                                \
+    }                                                          \
+  STMT_END
+#endif
+
+
+
+/** Write <b>n</b> bytes of strong random data to <b>to</b>. Return 0 on
+ * success, -1 on failure.  Most callers will want crypto_rand instead.
+ */
+int
+crypto_rand_unmocked(char *to, size_t n)
+{
+  int r;
+  tor_assert(n < INT_MAX);
+  tor_assert(to);
+  r = RAND_bytes((unsigned char*)to, (int)n);
+  if (r == 0)
+    crypto_log_errors(LOG_WARN, "generating random data");
+  return (r == 1) ? 0 : -1;
+}
+
+/** Return a pseudorandom integer, chosen uniformly from the values
+ * between 0 and <b>max</b>-1 inclusive.  <b>max</b> must be between 1 and
+ * INT_MAX+1, inclusive. */
+int
+crypto_rand_int(unsigned int max)
+{
+  unsigned int val;
+  unsigned int cutoff;
+  tor_assert(max <= ((unsigned int)INT_MAX)+1);
+  tor_assert(max > 0); /* don't div by 0 */
+
+  /* We ignore any values that are >= 'cutoff,' to avoid biasing the
+   * distribution with clipping at the upper end of unsigned int's
+   * range.
+   */
+  cutoff = UINT_MAX - (UINT_MAX%max);
+  while (1) {
+    crypto_rand((char*)&val, sizeof(val));
+    if (val < cutoff)
+      return val % max;
+  }
+}
+
+
+/** Return a pseudorandom integer, chosen uniformly from the values <i>i</i>
+ * such that <b>min</b> &lt;= <i>i</i> &lt <b>max</b>.
+ *
+ * <b>min</b> MUST be in range [0, <b>max</b>).
+ * <b>max</b> MUST be in range (min, INT_MAX].
+ */
+int
+crypto_rand_int_range(unsigned int min, unsigned int max)
+{
+  tor_assert(min < max);
+  tor_assert(max <= INT_MAX);
+
+  /* The overflow is avoided here because crypto_rand_int() returns a value
+   * between 0 and (max - min) inclusive. */
+  return min + crypto_rand_int(max - min);
+}
+
+/** As crypto_rand_int_range, but supports uint64_t. */
+uint64_t
+crypto_rand_uint64_range(uint64_t min, uint64_t max)
+{
+  tor_assert(min < max);
+  return min + crypto_rand_uint64(max - min);
+}
+
+/** As crypto_rand_int_range, but supports time_t. */
+time_t
+crypto_rand_time_range(time_t min, time_t max)
+{
+  tor_assert(min < max);
+  return min + (time_t)crypto_rand_uint64(max - min);
+}
+
+/** Return a pseudorandom 64-bit integer, chosen uniformly from the values
+ * between 0 and <b>max</b>-1 inclusive. */
+uint64_t
+crypto_rand_uint64(uint64_t max)
+{
+  uint64_t val;
+  uint64_t cutoff;
+  tor_assert(max < UINT64_MAX);
+  tor_assert(max > 0); /* don't div by 0 */
+
+  /* We ignore any values that are >= 'cutoff,' to avoid biasing the
+   * distribution with clipping at the upper end of unsigned int's
+   * range.
+   */
+  cutoff = UINT64_MAX - (UINT64_MAX%max);
+  while (1) {
+    crypto_rand((char*)&val, sizeof(val));
+    if (val < cutoff)
+      return val % max;
+  }
+}
+
+/** Return a pseudorandom double d, chosen uniformly from the range
+ * 0.0 <= d < 1.0.
+ */
+double
+crypto_rand_double(void)
+{
+  /* We just use an unsigned int here; we don't really care about getting
+   * more than 32 bits of resolution */
+  unsigned int uint;
+  crypto_rand((char*)&uint, sizeof(uint));
+#if SIZEOF_INT == 4
+#define UINT_MAX_AS_DOUBLE 4294967296.0
+#elif SIZEOF_INT == 8
+#define UINT_MAX_AS_DOUBLE 1.8446744073709552e+19
+#else
+#error SIZEOF_INT is neither 4 nor 8
+#endif
+  return ((double)uint) / UINT_MAX_AS_DOUBLE;
+}
